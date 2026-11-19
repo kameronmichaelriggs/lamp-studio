@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lamp Studio</title>
+<style>
+  :root { --bg:#f4f3f0; --panel:#ffffff; --ink:#1c1c1e; --muted:#6b6b70; --line:#e2e0db; --accent:#e8892c; --ok:#2f9e5b; --bad:#c8443a; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#141416; --panel:#1d1d20; --ink:#eeeef0; --muted:#9a9aa2; --line:#2d2d32; } }
+  :root[data-theme="dark"] { --bg:#141416; --panel:#1d1d20; --ink:#eeeef0; --muted:#9a9aa2; --line:#2d2d32; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.4 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
+  .app { display:grid; grid-template-columns: 1fr 380px; height:100vh; }
+  @media (max-width: 900px) { .app { grid-template-columns:1fr; height:auto; } #view { height:60vh; } }
+  #view { position:relative; min-height:300px; }
+  #view canvas { display:block; width:100%; height:100%; }
+  .hud { position:absolute; left:16px; top:16px; font-size:12px; color:var(--muted); }
+  aside { background:var(--panel); border-left:1px solid var(--line); overflow-y:auto; padding:16px; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:20px 0 8px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  button { font:inherit; border:1px solid var(--line); background:var(--bg); color:var(--ink); border-radius:8px; padding:7px 12px; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button:disabled { opacity:.45; cursor:default; }
+  .status { font-size:12px; color:var(--muted); }
+  .status b.ok { color:var(--ok); } .status b.bad { color:var(--bad); }
+  .s { margin:10px 0; }
+  .s label { display:flex; justify-content:space-between; font-size:13px; }
+  .s label span { color:var(--muted); font-variant-numeric:tabular-nums; }
+  .s .ends { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  .poses { display:flex; flex-direction:column; gap:6px; }
+  .pose { display:flex; gap:6px; align-items:center; border:1px solid var(--line); border-radius:8px; padding:6px 8px; }
+  .pose .name { flex:1; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pose input { width:52px; font:inherit; padding:3px 4px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
+  .pose button { padding:4px 8px; font-size:12px; }
+  input[type=text] { font:inherit; padding:7px 8px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--ink); flex:1; min-width:0; }
+  #log { font:11px/1.4 Menlo, monospace; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:8px; height:110px; overflow-y:auto; white-space:pre-wrap; color:var(--muted); }
+  #face { display:block; margin:0 auto; max-width:100%; }
+  .hint { font-size:12px; color:var(--muted); margin:4px 0 0; }
+  .srow { display:grid; grid-template-columns: 82px 1fr 92px; gap:8px; align-items:center; font-size:12px; margin:4px 0; }
+  .srow > span:last-child, .srow > b { text-align:right; }
+  .beh { border:1px solid var(--line); border-radius:10px; padding:10px; margin:8px 0; }
+  .beh h3 { margin:0 0 4px; font-size:14px; } .beh .when { font-size:12px; color:var(--muted); margin:2px 0; }
+  .beh table { width:100%; border-collapse:collapse; font-size:11px; margin-top:6px; }
+  .beh th { text-align:left; color:var(--muted); font-weight:500; padding:2px; }
+  .beh td { padding:1px 2px; } .beh td input { width:38px; font:inherit; padding:2px 3px; border:1px solid var(--line); border-radius:4px; background:var(--bg); color:var(--ink); }
+  .beh td.step { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:92px; }
+  .beh .load { font-variant-numeric:tabular-nums; } .beh .load.hot { color:var(--bad); font-weight:600; }
+  .bar { height:8px; background:var(--line); border-radius:4px; overflow:hidden; } .bar i { display:block; height:100%; border-radius:4px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="view"><div class="hud">Drag to orbit · scroll to zoom · this is your v48 model</div></div>
+  <aside>
+    <h1>Lamp Studio</h1>
+    <div class="status" id="status">Not connected. Close the Arduino Serial Monitor first.</div>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" id="connect">Connect to lamp</button>
+      <button id="takeover" disabled title="The lamp is sitting in its resting pose: take control without moving">Take over at rest</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="live" disabled>Live: off</button>
+      <button id="rest" disabled>Glide to rest</button>
+      <button id="demo" disabled>Alive demo</button>
+    </div>
+    <p class="hint">Live on = the real lamp follows the sliders, gently. Live off = only the model moves (practice safely).</p>
+
+    <h2>Safety (from your model’s weights)</h2>
+    <div id="safety"><p class="hint">Loading model…</p></div>
+
+    <h2>Body</h2>
+    <div id="sliders"></div>
+
+    <h2>Face lights</h2>
+    <canvas id="face" width="340" height="120"></canvas>
+    <div id="ledsliders"></div>
+
+    <h2>Behaviours (what the lamp does)</h2>
+    <p class="hint">Each card is one thing the lamp does by itself. <b>Preview</b> plays it on the model only (Live switches off first). Change any number, then <b>Copy changes for Claude</b>. <b>Try on lamp</b> runs the lamp's own version (needs Connect).</p>
+    <div id="beh"></div>
+    <div class="row" style="margin-top:8px"><button id="behCopy">Copy changes for Claude</button><button id="behReset">Reset to the lamp's version</button></div>
+    <textarea id="behOut" readonly style="display:none;width:100%;height:90px;margin-top:6px;font:11px Menlo,monospace;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px"></textarea>
+
+    <h2>Poses</h2>
+    <div class="row"><input type="text" id="posename" placeholder="Name this pose (e.g. curious)"><button id="save">Save pose</button></div>
+    <div class="poses" id="poses" style="margin-top:8px"></div>
+    <div class="row" style="margin-top:8px"><button class="primary" id="play">▶ Play poses in order</button><button id="stop">Stop</button></div>
+    <p class="hint">The number on each pose is how many seconds the move into it takes. Moves ease in and out.</p>
+
+    <h2>Lamp says</h2>
+    <div id="log"></div>
+  </aside>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+// ---------- joints: limits are what we measured on the real lamp (Nov 12-14) ----------
+const JOINTS = [
+  { id:'base',     label:'Base turn',  min:-60, max:60,  rest:0,   ends:['its right','its left'],      note:'' },
+  { id:'shoulder', label:'Shoulder (lower arm)', min:-85, max:40, rest:-12, ends:['leans back','leans forward'], note:'' },
+  { id:'elbow',    label:'Elbow (upper arm)',    min:-20, max:118, rest:42,  ends:['straight','bent forward'], note:'' },
+  { id:'tilt',     label:'Head tilt',  min:-35, max:40,  rest:-21, ends:['head up (servo is weak lifting)','head down'], note:'' },
+  { id:'turn',     label:'Head turn',  min:-40, max:40,  rest:0,   ends:['its right','its left'], note:'' },
+  { id:'browL',    label:'Brow L',     min:0,   max:20,  rest:0,   ends:['flat','raised'], note:'' },
+  { id:'browR',    label:'Brow R',     min:0,   max:20,  rest:0,   ends:['flat','raised'], note:'' },
+];
+const LEDS = [
+  { id:'pos',    label:'Smile position', min:0, max:28, rest:14, ends:['your right','your left'] },
+  { id:'size',   label:'Smile size',     min:1, max:12, rest:4,  ends:['small','wide'] },
+  { id:'bright', label:'Brightness',     min:0, max:100, rest:30, ends:['off','full'] },
+  { id:'top',    label:'Top glow',       min:0, max:100, rest:0,  ends:['off','full'] },
+];
+const state = {}; [...JOINTS, ...LEDS].forEach(j => state[j.id] = j.rest);
+
+function makeSliders(list, host) {
+  list.forEach(j => {
+    const d = document.createElement('div'); d.className = 's';
+    d.innerHTML = `<label>${j.label}<span id="v_${j.id}"></span></label>
+      <input type="range" id="r_${j.id}" min="${j.min}" max="${j.max}" step="1" value="${j.rest}">
+      <div class="ends"><span>${j.min}: ${j.ends[0]}</span><span>${j.ends[1]}: ${j.max}</span></div>`;
+    host.appendChild(d);
+    const r = d.querySelector('input');
+    r.addEventListener('input', () => { state[j.id] = +r.value; refresh(); dirty = true; });
+  });
+}
+makeSliders(JOINTS, document.getElementById('sliders'));
+makeSliders(LEDS, document.getElementById('ledsliders'));
+function setSliders(p) { for (const k in p) if (k in state) { state[k] = p[k]; const r = document.getElementById('r_' + k); if (r) r.value = Math.round(p[k]); } refresh(); }
+function refresh() {
+  [...JOINTS, ...LEDS].forEach(j => document.getElementById('v_' + j.id).textContent = Math.round(state[j.id]) + (JOINTS.includes(j) ? '°' : ''));
+  poseModel(); drawFace();
+}
+
+// ---------- 3D model ----------
+const view = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+renderer.setPixelRatio(devicePixelRatio); view.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(35, 1, 1, 10000);
+const controls = new THREE.OrbitControls(camera, renderer.domElement); controls.enableDamping = true;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x666677, 0.9));
+const sun = new THREE.DirectionalLight(0xffffff, 0.8); sun.position.set(300, 600, 500); scene.add(sun);
+const fill = new THREE.DirectionalLight(0xffffff, 0.35); fill.position.set(-400, 200, -300); scene.add(fill);
+const grid = new THREE.GridHelper(600, 12, 0x999999, 0xcccccc); grid.material.opacity = .35; grid.material.transparent = true; scene.add(grid);
+let N = {};
+new THREE.GLTFLoader().load('lamp.glb', g => {
+  const root = g.scene; scene.add(root);
+  root.traverse(o => { if (o.name && o.name.startsWith('J_')) N[o.name.slice(2)] = o;
+    if (o.isMesh && o.material) { o.material.side = THREE.DoubleSide; } });
+  root.updateMatrixWorld(true);
+  root.traverse(o => { if (o.isMesh) { const s = new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3()); if (Math.max(s.x, s.z) > 400) o.visible = false; } });   // the model's desk / floor
+  const box = new THREE.Box3(); root.traverse(o => { if (o.isMesh && o.visible) box.expandByObject(o); });
+  const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3()).length();
+  grid.position.y = box.min.y;
+  controls.target.copy(c); camera.position.set(c.x - size * 1.2, c.y + size * 0.35, c.z + size * 1.3);   // start from the front-left, three-quarter view
+  addMarkers(); log('model loaded'); refresh();
+}, undefined, e => log('could not load lamp.glb: open this page through the little server (see README)'));
+const rad = d => d * Math.PI / 180;
+function poseModel() {
+  if (!N.shoulder) return;
+  N.base_yaw.rotation.set(0, rad(state.base), 0);
+  N.shoulder.rotation.set(rad(state.shoulder), 0, 0);
+  N.elbow.rotation.set(rad(state.elbow), 0, 0);
+  N.neck_pitch.rotation.set(rad(state.tilt), 0, 0);
+  N.head_yaw.rotation.set(0, rad(state.turn), 0);
+  const lift = v => rad(1.5 + v / 20 * 15.5);           // same squeeze as the lamp: never touches either edge
+  if (N.brow_L) N.brow_L.rotation.set(0, 0, lift(state.browL));
+  if (N.brow_R) N.brow_R.rotation.set(0, 0, -lift(state.browR));
+  if (markers.shoulder) checkSafety();
+}
+// ---------- safety: servo load (from the model's part weights) + head clearance ----------
+// Weights and centres of mass per moving part, from Lamp-Full-v48 (Blender mm: x, y = -forward, z = up).
+const MASS = { shoulder:{ g:118, com:[0.5, 0, 164.6] }, elbow:{ g:104.5, com:[-0.6, 0, 274.2] },
+               neck_pitch:{ g:52.7, com:[1.3, 0, 320] }, head_yaw:{ g:306.8 * 1.1, com:[-2.2, -11.7, 389.6] } };   // head +10% for wires/glue
+const JZ = { base_yaw:0, shoulder:101.5, elbow:231.5, neck_pitch:311.5, head_yaw:351.5 };
+// What each servo can hold (kg·cm). DS3225 ~21 at 6 V. The small coreless tilt servo is the weak link (estimates from the model, Nov 14).
+const SERVO = { shoulder:{ name:'Shoulder servo', max:21 }, elbow:{ name:'Elbow servo', max:21 }, neck_pitch:{ name:'Head tilt servo', max:1.3 } };   // held the demo's lean-in (~1.2) briefly, so 1.3 is its practical limit
+const CHAIN = { shoulder:['shoulder','elbow','neck_pitch','head_yaw'], elbow:['elbow','neck_pitch','head_yaw'], neck_pitch:['neck_pitch','head_yaw'] };
+const markers = {};
+function addMarkers() {
+  for (const b in MASS) { const m = new THREE.Object3D(), c = MASS[b].com;
+    m.position.set(c[0], c[2] - JZ[b], -c[1]); N[b].add(m); markers[b] = m; }
+}
+let safety = { ok:true, worst:'', loads:{}, clear:'' };
+function checkSafety() {
+  if (!N.shoulder) return safety;
+  N.base_yaw.parent.updateMatrixWorld(true);
+  const loads = {}; let ok = true, worst = '';
+  for (const j in CHAIN) {
+    const p = new THREE.Vector3(), a = new THREE.Vector3(1, 0, 0); N[j].getWorldPosition(p);
+    a.applyQuaternion(N[j].getWorldQuaternion(new THREE.Quaternion())).normalize();   // the joint's pitch axis
+    let t = 0;
+    for (const b of CHAIN[j]) { const d = markers[b].getWorldPosition(new THREE.Vector3()).sub(p);
+      d.sub(a.clone().multiplyScalar(d.dot(a))); t += MASS[b].g / 1000 * Math.hypot(d.x, d.z) / 10; }   // kg x cm
+    const frac = t / SERVO[j].max; loads[j] = { t, frac };
+    if (frac > 1.0) { ok = false; worst = `${SERVO[j].name} would be overloaded (${t.toFixed(1)} of ${SERVO[j].max} kg·cm)`; }
+  }
+  // clearance: the head must stay above the desk and must not come down onto the base
+  const hb = new THREE.Box3(); N.head_yaw.traverse(o => { if (o.isMesh) hb.expandByObject(o); });
+  const desk = grid.position.y; let clear = 'clear';
+  if (hb.min.y < desk + 8) { ok = false; clear = 'head would hit the desk'; worst = worst || 'The head would hit the desk'; }
+  else { const r = Math.min(Math.hypot(hb.min.x, 0), 0) || 0;
+    const nearAxis = hb.min.x < 92 && hb.max.x > -92 && hb.min.z < 92 && hb.max.z > -92;
+    if (nearAxis && hb.min.y < desk + 112) { ok = false; clear = 'head would hit the base'; worst = worst || 'The head would hit the base'; } }
+  safety = { ok, worst, loads, clear };
+  drawSafety(); return safety;
+}
+function drawSafety() {
+  const el = document.getElementById('safety'); if (!el) return;
+  const row = (label, frac, text) => { const c = frac > 1.0 ? 'var(--bad)' : frac > 0.7 ? 'var(--accent)' : 'var(--ok)';
+    return `<div class="srow"><span>${label}</span><div class="bar"><i style="width:${Math.min(100, frac * 100)}%;background:${c}"></i></div><span>${text}</span></div>`; };
+  let h = '';
+  for (const j in safety.loads) { const L = safety.loads[j]; h += row(SERVO[j].name.replace(' servo', ''), L.frac, Math.round(L.frac * 100) + '%'); }
+  h += `<div class="srow"><span>Clearance</span><b style="color:${safety.clear === 'clear' ? 'var(--ok)' : 'var(--bad)'}">${safety.clear}</b></div>`;
+  h += safety.ok ? `<p class="hint" style="color:var(--ok)">Safe pose.</p>` : `<p class="hint" style="color:var(--bad)"><b>Unsafe: ${safety.worst}.</b> The lamp stays at its last safe pose.</p>`;
+  el.innerHTML = h;
+}
+function resize() { const w = view.clientWidth, h = view.clientHeight; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+(function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); })();
+
+// ---------- face preview (same math as the lamp: 57-pixel halo, pixel 1 top just right of centre, clockwise) ----------
+const fc = document.getElementById('face'), fx = fc.getContext('2d');
+function drawFace() {
+  fx.clearRect(0, 0, fc.width, fc.height);
+  const S = fc.width / 185, cx = fc.width / 2, cy = fc.height / 2;      // mm -> px; face panel 173 x 58 mm (v48 model)
+  fx.fillStyle = '#111'; fx.beginPath(); fx.roundRect(cx - 86.5 * S, cy - 29 * S, 173 * S, 58 * S, 14 * S); fx.fill();
+  const px = new Array(58).fill(null).map(() => [0, 0, 0]);
+  const B = state.bright / 100, wrap = p => ((p - 1) % 57 + 57) % 57 + 1;
+  for (let i = -2; i <= 30; i++) { const d = Math.abs(i - state.pos); let k = Math.max(0, Math.min(1, 1 - d / (state.size + 1))); k = k * k * (3 - 2 * k);
+    if (k > 0) { const p = wrap(14 + i); px[p] = [255 * B * k, 150 * B * k, 60 * B * k]; } }
+  for (let k = -7; k <= 7; k++) { const w = state.top / 100 * (1 - Math.abs(k) / 8); if (w > .01) { const p = wrap(57 + k + 1); px[p] = [255 * w, 220 * w, 160 * w].map((v, i) => Math.max(v, px[p][i])); } }
+  for (let p = 1; p <= 57; p++) { const [x, y] = haloPoint((p - 0.5) / 57), c = px[p];
+    fx.fillStyle = `rgb(${c.map(v => Math.min(255, v + 25) | 0).join(',')})`; fx.beginPath(); fx.arc(cx + x * S, cy + y * S, 2.4 * S, 0, 7); fx.fill(); }
+}
+// the halo strip's real path (v48 model): rounded rectangle 154.6 x 39.4 mm, ~10 mm corners.
+// f = 0..1 around it, starting at the top centre and going clockwise (as you look at the face), like the strip.
+function haloPoint(f) {
+  const W = 154.6, H = 39.4, R = 10, a = W / 2 - R, b = H / 2 - R, q = Math.PI * R / 2;
+  const seg = [a, q, 2 * b, q, 2 * a, q, 2 * b, q, a], total = seg.reduce((s, v) => s + v, 0);
+  let s = f * total, i = 0; while (i < seg.length - 1 && s > seg[i]) { s -= seg[i]; i++; }
+  const arc = (ccx, ccy, a0) => { const t = a0 + s / R; return [ccx + R * Math.cos(t), ccy + R * Math.sin(t)]; };
+  switch (i) {
+    case 0: return [s, -H / 2];                       // top, centre -> right
+    case 1: return arc(a, -b, -Math.PI / 2);          // top-right corner
+    case 2: return [W / 2, -b + s];                   // right side, down
+    case 3: return arc(a, b, 0);                      // bottom-right corner
+    case 4: return [a - s, H / 2];                    // bottom, right -> left
+    case 5: return arc(-a, b, Math.PI / 2);           // bottom-left corner
+    case 6: return [-W / 2, b - s];                   // left side, up
+    case 7: return arc(-a, -b, Math.PI);              // top-left corner
+    default: return [-a + s, -H / 2];                 // top, left -> centre
+  }
+}
+
+// ---------- serial (Chrome Web Serial) ----------
+let port, writer, liveOn = false, dirty = false, connected = false;
+const statusEl = document.getElementById('status');
+function setStatus(html) { statusEl.innerHTML = html; }
+function log(t) { const l = document.getElementById('log'); l.textContent += t + '\n'; l.scrollTop = l.scrollHeight; }
+// The page talks to studio_server.py (the little helper on the Mac), which talks to the lamp over USB.
+async function send(line) { try { await fetch('/send', { method:'POST', body: line + '\n' }); } catch (e) {} }
+let seen = 0;
+async function poll() {
+  try { const r = await (await fetch('/read?after=' + seen, { cache:'no-store' })).json(); seen = r.n; r.lines.forEach(onLine);
+    if (connected && !r.ok) setStatus('<b class="bad">Lamp not found.</b> Check the USB cable (the helper keeps retrying).');
+    else if (connected && r.ok && statusEl.dataset.ok !== '1') { statusEl.dataset.ok = '1'; setStatus('<b class="ok">Connected</b> (' + r.port + '). If the lamp is sitting at rest, press “Take over at rest”.'); }
+  } catch (e) { if (connected) setStatus('<b class="bad">Helper not running.</b> Start studio_server.py again.'); }
+  setTimeout(poll, connected ? 100 : 1000);
+}
+document.getElementById('connect').onclick = async () => {
+  connected = true; statusEl.dataset.ok = '';
+  ['takeover','live','rest','demo'].forEach(id => document.getElementById(id).disabled = false);
+  await send('i');
+};
+poll();
+function onLine(line) {
+  log(line);
+  if (line.startsWith('POSE ') && awaitingTakeover) { const v = line.split(' ').slice(1).map(Number); awaitingTakeover = false;
+    if (v.slice(0, 4).every(x => x === 0)) { send('R'); setTimeout(() => send('?'), 300); return; } }
+  if (line.startsWith('POSE ')) { const v = line.split(' ').slice(1).map(Number);
+    setSliders({ base:v[0], shoulder:v[1], elbow:v[2], tilt:v[3], turn:v[4], browL:v[5], browR:v[6] }); }
+}
+let awaitingTakeover = false;
+// Ask the lamp where it is first. If it's already being controlled it reports its real pose (we just match it);
+// if it was just restarted it reports all zeros, and only then do we tell it "you're sitting at rest" (R).
+document.getElementById('takeover').onclick = async () => { awaitingTakeover = true; await send('?');
+  const b = document.getElementById('takeover'); b.textContent = '✓ In control'; setStatus('<b class="ok">In control.</b> Turn Live on, then move a slider slowly.'); };
+document.getElementById('rest').onclick = async () => { setLive(false); await send('r'); setSliders(Object.fromEntries(JOINTS.map(j => [j.id, j.rest]))); };
+document.getElementById('demo').onclick = async () => { setLive(false); await send('a'); };
+function setLive(on) { liveOn = on; const b = document.getElementById('live'); b.textContent = 'Live: ' + (on ? 'ON' : 'off'); b.classList.toggle('primary', on); if (on) dirty = true; }
+document.getElementById('live').onclick = () => setLive(!liveOn);
+setInterval(async () => {          // stream at 20 Hz while something changed
+  if (!connected || !liveOn || !dirty) return; dirty = false;
+  if (!safety.ok) return;                 // never send an unsafe pose: the lamp holds the last safe one
+  const s = state; await send(`q${s.base} ${s.shoulder} ${s.elbow} ${s.tilt} ${s.turn} ${s.browL} ${s.browR}`);
+  await send(`l${s.pos} ${s.size} ${(s.bright / 100).toFixed(2)} ${(s.top / 100).toFixed(2)}`);
+}, 50);
+
+// ---------- poses: save, edit, play ----------
+const KEY = 'lampStudioPoses';
+let poses = []; try { poses = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) {}
+if (!poses.length) poses = [{ name:'rest', secs:1.5, p:{ ...state } }];
+function savePoses() { try { localStorage.setItem(KEY, JSON.stringify(poses)); } catch (e) {} }
+function renderPoses() {
+  const host = document.getElementById('poses'); host.innerHTML = '';
+  poses.forEach((ps, i) => {
+    const d = document.createElement('div'); d.className = 'pose';
+    d.innerHTML = `<span class="name">${i + 1}. ${ps.name.replace(/</g, '&lt;')}</span><input type="number" min="0.3" max="10" step="0.1" value="${ps.secs}" title="seconds to move into this pose"><button data-a="go">Go</button><button data-a="up">↑</button><button data-a="del">✕</button>`;
+    d.querySelector('input').onchange = e => { ps.secs = Math.max(.3, +e.target.value || 1.5); savePoses(); };
+    d.querySelector('[data-a=go]').onclick = () => playList([ps]);
+    d.querySelector('[data-a=up]').onclick = () => { if (i > 0) { [poses[i - 1], poses[i]] = [poses[i], poses[i - 1]]; savePoses(); renderPoses(); } };
+    d.querySelector('[data-a=del]').onclick = () => { poses.splice(i, 1); savePoses(); renderPoses(); };
+    host.appendChild(d);
+  });
+}
+document.getElementById('save').onclick = () => {
+  const n = document.getElementById('posename').value.trim() || ('pose ' + (poses.length + 1));
+  poses.push({ name:n, secs:1.5, p:{ ...state } }); savePoses(); renderPoses(); document.getElementById('posename').value = '';
+};
+let playing = 0;
+const ease = t => t * t * t * (t * (t * 6 - 15) + 10);   // smootherstep: soft start, soft stop
+async function playList(list) {
+  const id = ++playing;
+  for (const ps of list) {
+    const from = { ...state }, to = ps.p, T = ps.secs * 1000, t0 = performance.now();
+    await new Promise(res => { (function step() {
+      if (id !== playing) return res();
+      const t = Math.min(1, (performance.now() - t0) / T), k = ease(t), cur = {};
+      for (const key in to) cur[key] = from[key] + (to[key] - from[key]) * k;
+      setSliders(cur); dirty = true;
+      if (t < 1) requestAnimationFrame(step); else res();
+    })(); });
+    if (id !== playing) return;
+  }
+}
+document.getElementById('play').onclick = () => playList(poses);
+document.getElementById('stop').onclick = () => { playing++; };
+renderPoses(); refresh();
+
+// ---------- Behaviours (Nov 16): the lamp's own moves, step by step, same numbers as Arm_Test.ino ----------
+// Each step: [name, base, shoulder, elbow, tilt, turn, browL, browR, smileSize, bright, ms]. base/turn are relative to
+// where it's looking at you (0 = straight at you). ms = the time asked for; the lamp slows big moves down (~26 deg/s), shown as 'sec'.
+const REST = [0, -12, 42, -21, 0];
+const BEH_DEFAULT = [   // Nov 16 (end of day): matches Arm_Test.ino as tested live. speed = the lamp's top speed for that card (deg/s); a step's 12th number overrides it.
+  { id:'power', title:'🔌 Power-up (no laptop)', when:'Main power on with the USB on a wall charger. It was unplugged asleep, folded on the base.', sound:'none: it just starts snoring', lights:'purple glow fades in over 2 s, then breathes', cmd:null, speed:26,
+    steps:[['takes hold where it lies, stays ASLEEP', 0,-85,118,-14,0, 0,0, 3,18, 2000]] },
+  { id:'follow', title:'👀 Following you (rest / crouch / tall)', when:'Sees your face. Low in the picture = crouches to look down; high = stands tall to look up.', sound:'hello chirp when it first sees you', lights:'warm amber smile; the top arc slides toward where it looks and glows with the brows', cmd:null, speed:26,
+    steps:[['rest', 0,-12,42,-21,0, 6,6, 6,55, 900], ['crouch (you are low)', 0,-30,75,-33,0, 6,6, 6,55, 1200], ['tall (you are high)', 0,-4,16,-25,0, 8,8, 6,55, 1200], ['rest', 0,-12,42,-21,0, 6,6, 6,55, 1000]] },
+  { id:'g1', title:'✋ Open hand: HELLO', when:'Open hand seen in 2 pictures in a row while it follows you (3 s between reactions).', sound:'whistle "twee-twee-tweeoo"', lights:'warm yellow-orange band swinging side to side', cmd:'g1', speed:65,
+    steps:[['dips', 0,-20,58,-29,0, 16,16, 9,95, 300], ['bounces UP', 0,-4,18,-5,0, 20,20, 9,95, 250], ['down', 0,-20,58,-29,0, 6,6, 9,95, 250],
+           ['bounces UP', 0,-4,18,-5,0, 20,20, 9,95, 250], ['down', 0,-20,58,-29,0, 6,6, 9,95, 250], ['bounces UP', 0,-4,18,-5,0, 20,20, 9,95, 250], ['down', 0,-20,58,-29,0, 6,6, 9,95, 250],
+           ['smile', 0,-12,42,-21,0, 16,16, 9,95, 500, 26], ['back', 0,-12,42,-21,0, 6,6, 6,55, 900, 26]] },
+  { id:'g4', title:'👍 Thumbs up: PROUD', when:'Thumbs up seen in 2 pictures in a row.', sound:'"ya-ya-YAY!" + giggle', lights:'green throb with gold sparkles', cmd:'g4', speed:26,
+    steps:[['stretch up tall', 0,-2,8,-20,0, 20,20, 12,100, 350], ['bounce', -8,-6,22,-22,8, 20,20, 12,100, 220], ['spring', 8,-2,8,-20,-8, 20,20, 12,100, 220],
+           ['bounce', -8,-6,22,-22,8, 20,20, 12,100, 220], ['spring', 8,-2,8,-20,-8, 20,20, 12,100, 220], ['proud', 0,-2,8,-20,0, 20,20, 12,100, 200], ['back', 0,-12,42,-21,0, 6,6, 6,55, 900]] },
+  { id:'g3', title:'✌️ Peace: "peace brooo" DISCO DANCE', when:'Peace sign seen in 2 pictures in a row. Dances on the beat until the tune ends (~8 s).', sound:'original disco tune: string whoop, octave bass + hi-hat, hook, fade', lights:'pink/lime blocks, then a rainbow chase, white pop each bar, downlight changes every beat, rainbow finish', cmd:'g3', speed:70,
+    steps:[['swing', 16,-6,24,-24,14, 20,2, 8,90, 330], ['swing', -16,-6,24,-24,-14, 2,20, 8,90, 330], ['swing', 16,-6,24,-24,14, 20,2, 8,90, 330], ['swing', -16,-6,24,-24,-14, 2,20, 8,90, 330],
+           ['bob down', 0,-14,46,-23,0, 4,4, 8,90, 330], ['bob up', 0,-4,18,-5,0, 20,20, 8,90, 330], ['bob down', 0,-14,46,-23,0, 4,4, 8,90, 330], ['bob up', 0,-4,18,-5,0, 20,20, 8,90, 330],
+           ['swing', 16,-6,24,-24,14, 20,2, 8,90, 330], ['swing', -16,-6,24,-24,-14, 2,20, 8,90, 330], ['swing', 16,-6,24,-24,14, 20,2, 8,90, 330], ['swing', -16,-6,24,-24,-14, 2,20, 8,90, 330],
+           ['bob down', 0,-14,46,-23,0, 4,4, 8,90, 330], ['bob up', 0,-4,18,-5,0, 20,20, 8,90, 330], ['bob down', 0,-14,46,-23,0, 4,4, 8,90, 330], ['bob up', 0,-4,18,-5,0, 20,20, 8,90, 330],
+           ['ta-da (chin up) + rainbow', 0,-4,18,-24,0, 18,18, 12,100, 300], ['back', 0,-12,42,-21,0, 6,6, 6,55, 900, 26]] },
+  { id:'g2', title:'✊ Fist: WHOA → MAD → SAD', when:'Fist seen in 2 pictures in a row. Looks away to the other side when sad.', sound:'"WHOA!", growl, growl, then a sad trombone "womp, womp, womp, waaaaa"', lights:'white flash → red seething flicker → cools to dark blue, a bright tear falls from each eye and splashes at the chin (twice)', cmd:'g2', speed:26,
+    steps:[['WHOA: leans back', 0,-28,54,-30,0, 20,20, 2,100, 250, 45], ['MAD: slowly leans in and glares', 0,0,34,-22,0, 0,0, 3,100, 900], ['huff', 0,0,34,-22,8, 0,0, 3,100, 110], ['huff', 0,0,34,-22,-8, 0,0, 3,100, 110],
+           ['huff', 0,0,34,-22,8, 0,0, 3,100, 110], ['huff', 0,0,34,-22,-8, 0,0, 3,100, 110], ['glare', 0,0,34,-22,0, 0,0, 3,100, 110],
+           ['SAD: slumps and looks away', -12,-30,75,-35,-8, 12,12, 2,45, 1100], ['back', 0,-12,42,-21,0, 6,6, 6,55, 900]] },
+  { id:'pap', title:'📸 Paparazzi: flash photo', when:'A phone camera FLASH on its eye. One photo = a whole shoot. (v on the laptop turns it on/off; on after power-up.)', sound:'camera "pop-click" + flash recharge whine at every pose, fanfare at the end', lights:'star of the show: gold marquee + glitter, white flash every photo, crazy brows, spinning rainbow at the end', cmd:null, speed:30,
+    steps:[['pose 1: TALL (arm straight up)', 0,0,0,9,0, 20,20, 10,100, 300], ['pose 2: CROUCH (low and squished)', 0,-40,85,-35,0, 4,4, 6,90, 300],
+           ['pose 3: over its shoulder', 60,-6,24,-24,-40, 20,6, 9,100, 300], ['pose 4: over the other shoulder', -60,-6,24,-24,40, 6,20, 9,100, 300],
+           ['ta-da + rainbow', 0,-2,8,-12,0, 16,16, 12,100, 300], ['back', 0,-12,42,-21,0, 6,6, 5,60, 900, 26]] },
+  { id:'sleep', title:'😴 Goodnight (cover the eye)', when:'Eye (and camera) covered for 1 s while awake. Also: nobody for 1 min in stand-alone mode.', sound:'yawn, lullaby while it nods off, then a low snore every 9-13 s', lights:'fades to purple; the smile breathes slowly; top arc off', cmd:'S', speed:26,
+    steps:[['yawn (head back a little)', 0,-12,42,-25,0, 0,0, 3,18, 700], ['folds down (lower arm rests on the base)', 0,-85,118,-32,0, 0,0, 3,18, 3200], ['head droops (nods off)', 0,-85,118,-14,0, 0,0, 3,18, 1800]] },
+  { id:'wake', title:'🌅 Good morning (cover the eye again)', when:'Right eye covered while asleep. Also: sees a face (stand-alone, 20 s after power-up).', sound:'wake stretch, then a morning tune at the top', lights:'big orange sunrise smile → warm amber; the top arc lights over each brow as it tests them', cmd:'W', speed:26,
+    steps:[['sunrise + yawn: head tips back, body still', 0,-85,118,-35,0, 0,0, 14,100, 1400], ['tests LEFT brow', 0,-85,118,-35,0, 20,0, 14,100, 350], ['wiggle', 0,-85,118,-35,0, 9,0, 14,100, 160], ['wiggle', 0,-85,118,-35,0, 20,0, 14,100, 160],
+           ['tests RIGHT brow', 0,-85,118,-35,0, 0,20, 14,100, 350], ['wiggle', 0,-85,118,-35,0, 0,9, 14,100, 160], ['wiggle', 0,-85,118,-35,0, 0,20, 14,100, 160],
+           ['head settles level', 0,-85,118,-24,0, 0,0, 14,100, 600], ['stands up TALL, head level', 0,0,0,9,0, 16,16, 6,60, 1800], ['tune (brows up)', 0,0,0,9,0, 18,18, 8,75, 1500], ['settles into rest', 0,-12,42,-21,0, 12,12, 6,60, 1200]] },
+  { id:'lost', title:'🤷 Lost you', when:'No face (and no hand) for 10 s.', sound:'sleepy falling tone', lights:'smile stays on, dims a little', cmd:null, speed:26,
+    steps:[['goes home, smile stays on', 0,-12,42,-21,0, 0,0, 4,40, 1200]] },
+];
+const BKEY = 'lampBehaviours2';   // Nov 16: new cards, so old saved edits are not reused
+let BEH = JSON.parse(JSON.stringify(BEH_DEFAULT));
+try { const saved = JSON.parse(localStorage.getItem(BKEY) || 'null'); if (saved && saved.length === BEH.length) BEH = saved; } catch (e) {}
+const saveBeh = () => { try { localStorage.setItem(BKEY, JSON.stringify(BEH)); } catch (e) {} };
+function stepPose(st) { return { base:st[1], shoulder:st[2], elbow:st[3], tilt:st[4], turn:st[5], browL:st[6], browR:st[7], size:st[8], bright:st[9], pos:14, top:st[6] > 12 ? 60 : 0 }; }
+function stepSecs(st, prev, spd) {   // same speed limit as the lamp's glideAlive: big moves take longer (26 deg/s unless the card or step says)
+  let far = 0; for (let i = 1; i <= 5; i++) far = Math.max(far, Math.abs(st[i] - (prev ? prev[i] : REST[i - 1])));
+  return Math.max(st[10] * 1.25, far / (st[11] || spd || 26) * 1000) / 1000;
+}
+function tiltLoadOf(st) {   // put the model in this pose, read the safety numbers, and put it back
+  const keep = { ...state }; setSliders(stepPose(st)); const s = checkSafety(); setSliders(keep);
+  return s && s.loads && s.loads.neck_pitch ? s.loads.neck_pitch.frac : 0;
+}
+function renderBeh() {
+  const host = document.getElementById('beh'); host.innerHTML = '';
+  BEH.forEach((b, bi) => {
+    const d = document.createElement('div'); d.className = 'beh';
+    let rows = '';
+    b.steps.forEach((st, si) => {
+      const secs = stepSecs(st, si ? b.steps[si - 1] : null, b.speed), ld = N.shoulder ? Math.round(tiltLoadOf(st) * 100) : null;
+      rows += `<tr><td class="step" title="${st[0]}">${st[0]}</td>` + [1, 2, 3, 4, 5].map(i => `<td><input type="number" data-b="${bi}" data-s="${si}" data-i="${i}" value="${st[i]}"></td>`).join('') +
+        `<td>${secs.toFixed(1)}</td><td class="load${ld > 80 ? ' hot' : ''}">${ld == null ? '' : ld + '%'}</td></tr>`;
+    });
+    d.innerHTML = `<h3>${b.title}</h3><div class="when"><b>When:</b> ${b.when}</div><div class="when"><b>Sound:</b> ${b.sound}</div>${b.lights ? `<div class="when"><b>Lights:</b> ${b.lights}</div>` : ''}
+      <div class="row" style="margin-top:6px"><button data-a="prev">▶ Preview</button>${b.cmd ? `<button data-a="try" ${connected ? '' : 'disabled'} title="Runs the lamp's own version (the numbers in its code)">Try on lamp</button>` : ''}</div>
+      <table><tr><th>step</th><th>base</th><th>shoul</th><th>elbow</th><th>tilt</th><th>turn</th><th>sec</th><th>tilt load</th></tr>${rows}</table>`;
+    d.querySelector('[data-a=prev]').onclick = () => previewBeh(b);
+    const t = d.querySelector('[data-a=try]'); if (t) t.onclick = async () => { setLive(false); await send(b.cmd); };
+    d.querySelectorAll('input').forEach(inp => inp.onchange = () => {
+      const lim = [null, [-60, 60], [-40, 40], [-20, 90], [-35, 40], [-40, 40]][+inp.dataset.i];
+      BEH[+inp.dataset.b].steps[+inp.dataset.s][+inp.dataset.i] = Math.max(lim[0], Math.min(lim[1], +inp.value || 0)); saveBeh(); renderBeh(); });
+    host.appendChild(d);
+  });
+}
+async function previewBeh(b) {
+  setLive(false);                                   // preview NEVER moves the real lamp
+  const list = [{ secs:0.6, p:stepPose(['', ...REST, 6, 6, 6, 55, 600]) }];
+  b.steps.forEach((st, si) => list.push({ secs:stepSecs(st, si ? b.steps[si - 1] : null, b.speed), p:stepPose(st) }));
+  await playList(list);
+}
+document.getElementById('behCopy').onclick = () => {
+  const changed = BEH.map((b, i) => ({ id:b.id, steps:b.steps })).filter((b, i) => JSON.stringify(b.steps) !== JSON.stringify(BEH_DEFAULT[i].steps));
+  const out = document.getElementById('behOut'); out.style.display = 'block';
+  out.value = changed.length ? 'Lamp Studio behaviour changes:\n' + JSON.stringify(changed) : 'No changes from the lamp\'s version.';
+  out.select(); try { navigator.clipboard.writeText(out.value); } catch (e) {}
+};
+document.getElementById('behReset').onclick = () => { BEH = JSON.parse(JSON.stringify(BEH_DEFAULT)); saveBeh(); renderBeh(); };
+renderBeh();
+(function waitModel() { if (N.shoulder && markers.shoulder) renderBeh(); else setTimeout(waitModel, 300); })();
+document.getElementById('connect').addEventListener('click', () => setTimeout(renderBeh, 50));
+</script>
+</body>
+</html>
